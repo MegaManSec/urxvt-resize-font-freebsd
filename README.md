@@ -70,3 +70,6 @@ And, finally, XLFD/X logical font description is supported as well, e.g.:
 
     urxvt.font: -*-inconsolata-medium-*-normal-*-14-*-*-*-*-*-iso8859-*
 
+### Notes
+
+This extension has been tested on FreeBSD-13.3 with i3/X11.

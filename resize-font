@@ -119,6 +119,19 @@ sub get_dimensions {
     return ($x, $y, $width, $height);
 }
 
+sub do_resize {
+  my ($self, $x, $y, $w, $h) = @_;
+  my $term = $self->{'term'};
+
+  foreach my $var (\$w, \$h) {
+    if ($$var < 24) {
+        $$var = 24;
+    }
+  }
+
+  $term->XMoveResizeWindow($term->parent, $x, $y, $w, $h);
+}
+
 
 sub on_action {
   my ($self, $string) = @_;
@@ -156,15 +169,15 @@ sub on_action {
   }
 
   if ($string eq "reset") {
-    # Completely reset the window size to the original.
-    $term->XMoveResizeWindow($term->parent, $old_x, $old_y, $orig_w, $orig_h);
+    # Completely reset the window size to the original. width and height.
+    do_resize($self, $old_x, $old_y, $orig_w, $orig_h);
   } elsif ($string =~ m/static/) {
-    # Keep the window position fixed as well as its size (just change the font size).
-    $term->XMoveResizeWindow($term->parent, $old_x, $old_y, $old_w, $old_h);
+    # Keep the window's size the same (just change the font size).
+    do_resize($self, $old_x, $old_y, $old_w, $old_h);
   } elsif ($string ne "reset") {
-    # Keep the position of the window fixed, but resize the width+height of the window.
+    # Resize the width+height of the window.
     my ($new_x, $new_y, $new_w, $new_h) = get_dimensions($self);
-    $term->XMoveResizeWindow($term->parent, $old_x, $old_y, $new_w, $new_h);
+    do_resize($self, $old_x, $old_y, $new_w, $new_h);
   }
 
   ()
@@ -187,7 +200,7 @@ sub round {
 sub atleast {
   my ($min, $val) = @_;
   if (0 < abs $val && abs $val < $min){
-     return $val / abs($val)
+    return $val / abs($val)
   }
   return $val;
 }
