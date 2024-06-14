@@ -1,6 +1,7 @@
 # vim:ft=perl:fenc=utf-8:tw=80
 # Copyright (c) 2009-, Simon Lundström <simmel@soy.se>
 # Copyright (c) 2014 Maarten de Vries <maarten@de-vri.es>
+# Copyright (c) 2024 Joshua Rogers <joshua@joshua.hu>
 #
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -25,28 +26,42 @@ my @fonts = (
 my @fixed = qw(4x6 5x7 5x8 6x9 6x10 6x12 6x13 7x13 7x14 8x13 8x16 9x15 9x18
                10x20 12x24);
 my $step;
+my $orig_x;
+my $orig_y;
+my $orig_w;
+my $orig_h;
 
 sub on_start {
   my ($self) = @_;
 
+  ($orig_x, $orig_y, $orig_w, $orig_h) = get_dimensions($self);
+
   foreach (@fonts) {
     $_->{'default'} = $self->resource($_->{'name'});
+  }
+
+  # Default to monospace.
+  if (!defined($fonts[0]->{'default'})) {
+    $fonts[0]->{'default'} = "xft:monospace:size=8";
   }
 
   $step = $self->x_resource("%.step") || 2;
 }
 
 sub on_init {
-   my ($self) = @_;
-   my $commands = {
-     "smaller" => "C-minus",
-     "bigger"  => "C-plus",
-     "reset"   => "C-equal",
-     "show"    => "C-question",
-   };
-   bind_hotkeys($self, $commands);
+  my ($self) = @_;
+  my $commands = {
+    "smaller"        => "C-minus",
+    "bigger"         => "C-equal",
+    "reset"          => "C-0",
+    "smaller-static" => "C-underscore",
+    "bigger-static"  => "C-plus",
+    "show"           => "C-question",
+  };
 
-   ()
+  bind_hotkeys($self, $commands);
+
+  ()
 }
 
 sub bind_hotkeys {
@@ -74,16 +89,49 @@ sub bind_hotkeys {
   }
 }
 
+sub get_dimensions {
+    my ($self) = @_;
+    my $term = $self->{'term'};
+
+    my $width = $term->width;
+    my $height = $term->height;
+
+    # interalBorder default value is 4.
+    my $border_i = $term->x_resource('internalBorder') // 4;
+
+    # Size of the whole window
+    my ($type, $format, $vals) = $term->XGetWindowProperty($term->parent, $term->XInternAtom("_NET_FRAME_EXTENTS"));
+    my ($border_l, $border_r, $border_t, $border_b) = unpack "l!*", $vals;
+
+    # Location of the window
+    my ($x, $y, $child) = $term->XTranslateCoordinates($term->parent, $term->DefaultRootWindow, 0, 0);
+
+    # Ignore the border values for the location of the window.
+    $x -= $border_l;
+    $y -= $border_t;
+
+    # Account for the internalBorder difference of the terminal width and height.
+    # Without this, the terminal will resize inconsistently (even during resets).
+    # Based on my testing, each resize adds 4n-2(n-6) to the width of the terminal, and 2*n to the height.
+    $width += (4 * $border_i) - 2*($border_i-6);
+    $height += 2 * $border_i;
+
+    return ($x, $y, $width, $height);
+}
+
+
 sub on_action {
   my ($self, $string) = @_;
+  my $term = $self->{'term'};
+  my ($old_x, $old_y, $old_w, $old_h) = get_dimensions($self);
 
-  if ($string eq "bigger") {
+  if ($string =~ m/bigger/) {
     foreach (@fonts) {
       next if not defined($_->{'default'});
       update_font_size($self, $_, +$step);
     }
   }
-  elsif ($string eq "smaller") {
+  elsif ($string =~ m/smaller/) {
     foreach (@fonts) {
       next if not defined($_->{'default'});
       update_font_size($self, $_, -$step);
@@ -96,8 +144,6 @@ sub on_action {
     }
   }
   elsif ($string eq "show") {
-
-    my $term = $self->{'term'};
     $term->{'resize-font'}{'overlay'} = {
       ov => $term->overlay_simple(0, -1, format_font_info($self)),
       to => urxvt::timer
@@ -107,6 +153,18 @@ sub on_action {
         delete $term->{'resize-font'}{'overlay'};
       }),
     };
+  }
+
+  if ($string eq "reset") {
+    # Completely reset the window size to the original.
+    $term->XMoveResizeWindow($term->parent, $old_x, $old_y, $orig_w, $orig_h);
+  } elsif ($string =~ m/static/) {
+    # Keep the window position fixed as well as its size (just change the font size).
+    $term->XMoveResizeWindow($term->parent, $old_x, $old_y, $old_w, $old_h);
+  } elsif ($string ne "reset") {
+    # Keep the position of the window fixed, but resize the width+height of the window.
+    my ($new_x, $new_y, $new_w, $new_h) = get_dimensions($self);
+    $term->XMoveResizeWindow($term->parent, $old_x, $old_y, $new_w, $new_h);
   }
 
   ()
@@ -137,7 +195,7 @@ sub atleast {
 sub update_font_size {
   my ($self, $font, $delta) = @_;
   my $regex = qr"(?<=size=)(\d+(?:\.\d+)?)";
-  my $current = get_font($self, $font->{'name'});
+  my $current = get_font($self, $font->{'name'}) // "xft:monospace:size=8";
 
   my ($index) = grep { $fixed[$_] eq $current } 0..$#fixed;
   if ($index or $index eq 0) {
@@ -168,6 +226,7 @@ sub update_font_size {
     my $newsize = $1+$delta if ($current =~ /$regex/);
     $current =~ s/$regex/$newsize/ge if ($newsize > 0);
   }
+
   set_font($self, $font, $current);
 }
 
