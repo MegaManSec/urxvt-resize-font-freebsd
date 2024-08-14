@@ -123,7 +123,7 @@ sub do_resize {
   my ($self, $x, $y, $w, $h) = @_;
   my $term = $self->{'term'};
 
-  foreach my $var (\$w, \$h) {
+  foreach my $var (\$w, \$h, \$x, \$y) {
     if ($$var < 24) {
         $$var = 24;
     }
